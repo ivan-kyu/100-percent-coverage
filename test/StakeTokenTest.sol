@@ -19,8 +19,8 @@ contract StakeTokenTest is Test {
         limeToken = new LimeToken();
         stakeToken = new StakeToken(limeToken);
 
-        limeToken.transfer(alice, stakeAmount);
-        limeToken.transfer(bob, stakeAmount);
+        limeToken.transfer(alice, stakeAmount * 100);
+        limeToken.transfer(bob, stakeAmount * 100);
 
         // the pool needs to have some initial liquidity
         limeToken.transfer(address(stakeToken), stakeAmount * 10);
@@ -97,10 +97,12 @@ contract StakeTokenTest is Test {
 
     function testStakeRevert_InsufficientBalance() public {
         vm.startPrank(alice);
-        limeToken.approve(address(stakeToken), stakeAmount + 100);
+        uint256 newStakeAmount = stakeAmount * 100 + 100;
+
+        limeToken.approve(address(stakeToken), newStakeAmount);
 
         vm.expectRevert("Insufficient Balance");
-        stakeToken.stakeToken(stakeAmount + 100);
+        stakeToken.stakeToken(newStakeAmount);
     }
 
     // Test Claim
@@ -198,5 +200,26 @@ contract StakeTokenTest is Test {
         stakeToken.stakeToken(stakeAmount);
 
         assertEq(stakeToken.getTokenExpiry(), block.timestamp + stakeToken.planDuration());
+    }
+
+    // Test Claim - Fuzzing
+    function testFuzzClaim(uint256 _stakeAmount) public {
+        vm.assume(_stakeAmount < stakeAmount && _stakeAmount > 0);
+
+        vm.startPrank(alice);
+        limeToken.approve(address(stakeToken), _stakeAmount);
+
+        stakeToken.stakeToken(_stakeAmount);
+        uint256 stakerBalanceBefore = limeToken.balanceOf(alice);
+
+        vm.warp(stakeToken.planExpired()); // Warp past plan expiration time
+
+        stakeToken.claimReward();
+
+        uint256 stakerBalanceAfter = limeToken.balanceOf(alice);
+
+        assertEq(
+            stakerBalanceBefore + _stakeAmount + (_stakeAmount * stakeToken.interestRate() / 100), stakerBalanceAfter
+        );
     }
 }
